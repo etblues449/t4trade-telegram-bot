@@ -16,7 +16,7 @@ ALLOWED_USERS = os.environ.get('ALLOWED_USERS', '').split(',')
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-api_client = metaapi.cloud.MetaApi(METAAPI_TOKEN)
+api_client = metaapi.MetaApi(METAAPI_TOKEN)
 account = api_client.metatrader_account_api.get_account(ACCOUNT_ID)
 
 async def start(update, context):
