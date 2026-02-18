@@ -1,15 +1,10 @@
-import subprocess
-import sys
-print("=== Installed packages ===")
-subprocess.check_call([sys.executable, '-m', 'pip', 'list'])
-print("==========================")
 
 import os
 import logging
 import re
 from decimal import Decimal, ROUND_DOWN
 from telegram.ext import Application, MessageHandler, filters, CommandHandler
-import metaapi.cloud
+import metaapi_cloud_sdk as metaapi
 
 # ========== CONFIGURATION ==========
 METAAPI_TOKEN = os.environ.get('METAAPI_TOKEN')
