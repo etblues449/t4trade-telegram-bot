@@ -1,3 +1,9 @@
+import subprocess
+import sys
+print("=== Installed packages ===")
+subprocess.check_call([sys.executable, '-m', 'pip', 'list'])
+print("==========================")
+
 import os
 import logging
 import re
@@ -160,3 +166,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
