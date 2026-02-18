@@ -1,0 +1,2 @@
+python-telegram-bot==20.7
+metaapi-cloud-sdk==23.1.2
