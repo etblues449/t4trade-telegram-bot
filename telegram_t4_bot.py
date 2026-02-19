@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 async def init_metaapi(application):
     """Initialize MetaAPI client and account, store in bot_data."""
     api_client = metaapi.MetaApi(METAAPI_TOKEN)
-account = await api_client.metatrader_account_api.get_account(ACCOUNT_ID)
+    account = await api_client.metatrader_account_api.get_account(ACCOUNT_ID)
     application.bot_data['api_client'] = api_client
     application.bot_data['account'] = account
     logger.info("MetaAPI initialized")
