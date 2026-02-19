@@ -14,17 +14,27 @@ RISK_PERCENT = float(os.environ.get('RISK_PERCENT', '1.0'))
 ALLOWED_USERS = os.environ.get('ALLOWED_USERS', '').split(',')
 PORT = int(os.environ.get('PORT', 10000))
 RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://t4trade-telegram-bot.onrender.com')
+
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ========== METAAPI SETUP (async) ==========
+# ========== METAAPI SETUP ==========
+api_client = metaapi.MetaApi(METAAPI_TOKEN)
+account = api_client.metatrader_account_api.get_account(ACCOUNT_ID)
+
 async def init_metaapi(application):
-    """Initialize MetaAPI client and account, store in bot_data."""
-    api_client = metaapi.MetaApi(METAAPI_TOKEN)
-    account = await api_client.metatrader_account_api.get_account(ACCOUNT_ID)
-    application.bot_data['api_client'] = api_client
+    """Initialize MetaAPI – store the account object and ensure it's connected."""
+    await account.wait_connected()
+    logger.info("MetaAPI account connected")
+    # Store the account in bot_data for later use
     application.bot_data['account'] = account
-    logger.info("MetaAPI initialized")
+
+# ========== HELPER: Get RPC Connection ==========
+async def get_rpc_connection(account):
+    """Obtain and connect an RPC connection for trading operations."""
+    rpc = account.get_rpc_connection()
+    await rpc.connect()
+    return rpc
 
 # ========== TELEGRAM COMMANDS ==========
 async def start(update, context):
@@ -42,28 +52,16 @@ async def start(update, context):
 
 async def balance(update, context):
     try:
-        account = context.bot_data['account']
-        await account.wait_connected()
-        
-        # Try the new method name first (get_account_info)
-        try:
-            info = await account.get_account_info()
-        except AttributeError:
-            # Fallback to old method name
-            info = await account.get_account_information()
-        
+        account_obj = context.bot_data['account']
+        rpc = await get_rpc_connection(account_obj)
+        info = await rpc.get_account_information()
         await update.message.reply_text(
             f"💰 Balance: ${info.balance:.2f}\n"
             f"📊 Equity: ${info.equity:.2f}\n"
             f"📉 Free Margin: ${info.margin_free:.2f}"
         )
     except Exception as e:
-        # If both fail, print available methods for debugging
-        if hasattr(account, '__dir__'):
-            methods = [m for m in dir(account) if not m.startswith('_')]
-            await update.message.reply_text(f"Error: {str(e)}\nAvailable methods: {methods}")
-        else:
-            await update.message.reply_text(f"Error fetching balance: {str(e)}")
+        await update.message.reply_text(f"Error fetching balance: {str(e)}")
 
 def parse_signal(text):
     text = text.upper().strip()
@@ -124,19 +122,21 @@ async def handle_signal(update, context):
         return
     
     try:
-        account = context.bot_data['account']
-        await account.wait_connected()
-        account_info = await account.get_account_information()
-        symbol_spec = await account.get_symbol_specification(signal['symbol'])
+        account_obj = context.bot_data['account']
+        rpc = await get_rpc_connection(account_obj)
+        
+        account_info = await rpc.get_account_information()
+        symbol_spec = await rpc.get_symbol_specification(signal['symbol'])
         
         if not signal['entry']:
-            price = await account.get_current_price(signal['symbol'])
+            price = await rpc.get_current_price(signal['symbol'])
             signal['entry'] = price['ask'] if signal['action'] == 'BUY' else price['bid']
         
         if signal['sl']:
+            point_value = await rpc.get_point_value(signal['symbol'], account_info.balance_currency)
             symbol_info = {
                 'point_size': symbol_spec['pointSize'],
-                'point_value': await account.get_point_value(signal['symbol'], account_info.balance_currency),
+                'point_value': point_value,
                 'volume_min': symbol_spec['volumeMin'],
                 'volume_max': symbol_spec['volumeMax'],
                 'volume_step': symbol_spec['volumeStep']
@@ -147,7 +147,7 @@ async def handle_signal(update, context):
             lot = symbol_spec['volumeMin']
         
         order_type = 'ORDER_TYPE_BUY' if signal['action'] == 'BUY' else 'ORDER_TYPE_SELL'
-        current_price = await account.get_current_price(signal['symbol'])
+        current_price = await rpc.get_current_price(signal['symbol'])
         price = current_price['ask'] if signal['action'] == 'BUY' else current_price['bid']
         
         order = {
@@ -160,7 +160,7 @@ async def handle_signal(update, context):
             'comment': 'Telegram Signal'
         }
         
-        result = await account.create_market_order(order)
+        result = await rpc.create_market_order(order)
         
         await update.message.reply_text(
             f"✅ Trade placed!\n"
@@ -174,19 +174,14 @@ async def handle_signal(update, context):
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
 def main():
-    # Create application
     app = Application.builder().token(TELEGRAM_TOKEN).post_init(init_metaapi).build()
-    
-    # Add handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("balance", balance))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_signal))
     
-    # Set up webhook
     webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
     logger.info(f"Starting webhook on {webhook_url}")
     
-    # Start webhook
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
@@ -194,5 +189,6 @@ def main():
         webhook_url=webhook_url,
         drop_pending_updates=True,
     )
+
 if __name__ == '__main__':
     main()
