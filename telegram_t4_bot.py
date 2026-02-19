@@ -44,14 +44,26 @@ async def balance(update, context):
     try:
         account = context.bot_data['account']
         await account.wait_connected()
-        info = await account.get_account_information()
+        
+        # Try the new method name first (get_account_info)
+        try:
+            info = await account.get_account_info()
+        except AttributeError:
+            # Fallback to old method name
+            info = await account.get_account_information()
+        
         await update.message.reply_text(
             f"💰 Balance: ${info.balance:.2f}\n"
             f"📊 Equity: ${info.equity:.2f}\n"
             f"📉 Free Margin: ${info.margin_free:.2f}"
         )
     except Exception as e:
-        await update.message.reply_text(f"Error fetching balance: {str(e)}")
+        # If both fail, print available methods for debugging
+        if hasattr(account, '__dir__'):
+            methods = [m for m in dir(account) if not m.startswith('_')]
+            await update.message.reply_text(f"Error: {str(e)}\nAvailable methods: {methods}")
+        else:
+            await update.message.reply_text(f"Error fetching balance: {str(e)}")
 
 def parse_signal(text):
     text = text.upper().strip()
