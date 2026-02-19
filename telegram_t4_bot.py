@@ -12,7 +12,8 @@ ACCOUNT_ID = os.environ.get('ACCOUNT_ID')
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 RISK_PERCENT = float(os.environ.get('RISK_PERCENT', '1.0'))
 ALLOWED_USERS = os.environ.get('ALLOWED_USERS', '').split(',')
-
+PORT = int(os.environ.get('PORT', 10000))
+RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://t4trade-telegram-bot.onrender.com')
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -161,25 +162,25 @@ async def handle_signal(update, context):
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
 def main():
+    # Create application
     app = Application.builder().token(TELEGRAM_TOKEN).post_init(init_metaapi).build()
+    
+    # Add handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("balance", balance))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_signal))
-    logger.info("Bot started. Listening for signals...")
-    app.run_polling()
-import threading
-import http.server
-import socketserver
-import os
-
-def run_http_server():
-    port = int(os.environ.get('PORT', 10000))
-    handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", port), handler) as httpd:
-        print(f"HTTP server running on port {port} (keeps Render happy)")
-        httpd.serve_forever()
-
-# Start HTTP server in a background thread
-threading.Thread(target=run_http_server, daemon=True).start()
+    
+    # Set up webhook
+    webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+    logger.info(f"Starting webhook on {webhook_url}")
+    
+    # Start webhook
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="webhook",
+        webhook_url=webhook_url,
+        drop_pending_updates=True,
+    )
 if __name__ == '__main__':
     main()
