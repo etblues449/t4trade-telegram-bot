@@ -167,6 +167,19 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_signal))
     logger.info("Bot started. Listening for signals...")
     app.run_polling()
+import threading
+import http.server
+import socketserver
+import os
 
+def run_http_server():
+    port = int(os.environ.get('PORT', 10000))
+    handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", port), handler) as httpd:
+        print(f"HTTP server running on port {port} (keeps Render happy)")
+        httpd.serve_forever()
+
+# Start HTTP server in a background thread
+threading.Thread(target=run_http_server, daemon=True).start()
 if __name__ == '__main__':
     main()
