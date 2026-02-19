@@ -1,7 +1,7 @@
-
 import os
 import logging
 import re
+import asyncio
 from decimal import Decimal, ROUND_DOWN
 from telegram.ext import Application, MessageHandler, filters, CommandHandler
 import metaapi_cloud_sdk as metaapi
@@ -16,9 +16,16 @@ ALLOWED_USERS = os.environ.get('ALLOWED_USERS', '').split(',')
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-api_client = metaapi.MetaApi(METAAPI_TOKEN)
-account = api_client.metatrader_account_api.get_account(ACCOUNT_ID)
+# ========== METAAPI SETUP (async) ==========
+async def init_metaapi(application):
+    """Initialize MetaAPI client and account, store in bot_data."""
+    api_client = metaapi.MetaApi(METAAPI_TOKEN)
+    account = api_client.metatrader_account_api.get_account(ACCOUNT_ID)
+    application.bot_data['api_client'] = api_client
+    application.bot_data['account'] = account
+    logger.info("MetaAPI initialized")
 
+# ========== TELEGRAM COMMANDS ==========
 async def start(update, context):
     user = update.effective_user.username
     if user not in ALLOWED_USERS and ALLOWED_USERS != ['']:
@@ -34,6 +41,7 @@ async def start(update, context):
 
 async def balance(update, context):
     try:
+        account = context.bot_data['account']
         await account.wait_connected()
         info = await account.get_account_information()
         await update.message.reply_text(
@@ -103,6 +111,7 @@ async def handle_signal(update, context):
         return
     
     try:
+        account = context.bot_data['account']
         await account.wait_connected()
         account_info = await account.get_account_information()
         symbol_spec = await account.get_symbol_specification(signal['symbol'])
@@ -152,7 +161,7 @@ async def handle_signal(update, context):
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
 def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app = Application.builder().token(TELEGRAM_TOKEN).post_init(init_metaapi).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("balance", balance))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_signal))
@@ -161,4 +170,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
