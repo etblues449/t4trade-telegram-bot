@@ -19,7 +19,6 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # ========== METAAPI SETUP ==========
-api_client = metaapi.MetaApi(METAAPI_TOKEN)
 account = api_client.metatrader_account_api.get_account(ACCOUNT_ID)
 
 async def init_metaapi(application):
