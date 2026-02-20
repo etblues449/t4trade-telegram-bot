@@ -163,11 +163,11 @@ async def handle_signal(update, context):
         result = await rpc.create_market_order(order)
         
         await update.message.reply_text(
-            f"✅ Trade placed!\n"
-            f"{signal['action']} {lot} {signal['symbol']} @ {price:.5f}\n"
-            f"SL: {signal['sl']} | TP: {signal['tp']}\n"
-            f"Risk: ${account_info.balance * RISK_PERCENT/100:.2f} ({RISK_PERCENT}%)"
-        )
+    f"✅ Trade placed!\n"
+    f"{signal['action']} {lot} {signal['symbol']} @ {price:.5f}\n"
+    f"SL: {signal['sl']} | TP: {signal['tp']}\n"
+    f"Risk: ${account_info.balance * RISK_PERCENT/100:.2f} ({RISK_PERCENT}%)"
+)
         
     except Exception as e:
         logger.error(f"Trade error: {str(e)}")
