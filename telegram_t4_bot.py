@@ -128,14 +128,16 @@ async def handle_signal(update, context):
             price = await rpc.get_current_price(signal['symbol'])
             signal['entry'] = price['ask'] if signal['action'] == 'BUY' else price['bid']
         
-        if signal['sl']:             
-                 point_value = await rpc.get_point_value(signal['symbol'], account_info['balance_currency'])            symbol_info = {
-                'point_size': symbol_spec['pointSize'],
-                'point_value': point_value,
-                'volume_min': symbol_spec['volumeMin'],
-                'volume_max': symbol_spec['volumeMax'],
-                'volume_step': symbol_spec['volumeStep']
-            }
+      
+ if signal['sl']:
+     point_value = await rpc.get_point_value(signal['symbol'], account_info['balance_currency'])
+     symbol_info = {
+        'point_size': symbol_spec['pointSize'],
+        'point_value': point_value,
+        'volume_min': symbol_spec['volumeMin'],
+        'volume_max': symbol_spec['volumeMax'],
+        'volume_step': symbol_spec['volumeStep']
+    }
             lot = calculate_lot_size(account_info['balance'], RISK_PERCENT, ...                                    signal['entry'], signal['sl'], symbol_info)
         else:
             lot = symbol_spec['volumeMin']
