@@ -19,15 +19,12 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # ========== METAAPI SETUP ==========
-account = api_client.metatrader_account_api.get_account(ACCOUNT_ID)
-
 async def init_metaapi(application):
-    """Initialize MetaAPI – store the account object and ensure it's connected."""
+    api_client = metaapi.MetaApi(METAAPI_TOKEN)
+    account = await api_client.metatrader_account_api.get_account(ACCOUNT_ID)
     await account.wait_connected()
-    logger.info("MetaAPI account connected")
-    # Store the account in bot_data for later use
     application.bot_data['account'] = account
-
+    logger.info("MetaAPI account connected and stored.")
 # ========== HELPER: Get RPC Connection ==========
 async def get_rpc_connection(account):
     """Obtain and connect an RPC connection for trading operations."""
