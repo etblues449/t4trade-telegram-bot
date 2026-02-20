@@ -108,44 +108,44 @@ async def handle_signal(update, context):
     if user not in ALLOWED_USERS and ALLOWED_USERS != ['']:
         await update.message.reply_text("⛔ Unauthorized")
         return
-    
+
     text = update.message.text
     logger.info(f"Received: {text}")
-    
+
     signal = parse_signal(text)
     if not signal:
         await update.message.reply_text("❌ Could not parse signal. Use format:\nBUY EURUSD 1.12345 SL 1.12000 TP 1.13000")
         return
-    
+
     try:
-        account_obj = context.bot_data['account']
-        rpc = await get_rpc_connection(account_obj)
-        
+        account = context.bot_data['account']
+        rpc = await get_rpc_connection(account)
+
         account_info = await rpc.get_account_information()
         symbol_spec = await rpc.get_symbol_specification(signal['symbol'])
-        
+
         if not signal['entry']:
             price = await rpc.get_current_price(signal['symbol'])
             signal['entry'] = price['ask'] if signal['action'] == 'BUY' else price['bid']
-        
-      
- if signal['sl']:
-     point_value = await rpc.get_point_value(signal['symbol'], account_info['balance_currency'])
-     symbol_info = {
-        'point_size': symbol_spec['pointSize'],
-        'point_value': point_value,
-        'volume_min': symbol_spec['volumeMin'],
-        'volume_max': symbol_spec['volumeMax'],
-        'volume_step': symbol_spec['volumeStep']
-    }
-            lot = calculate_lot_size(account_info['balance'], RISK_PERCENT, ...                                    signal['entry'], signal['sl'], symbol_info)
+
+        if signal['sl']:
+            point_value = await rpc.get_point_value(signal['symbol'], account_info['balance_currency'])
+            symbol_info = {
+                'point_size': symbol_spec['pointSize'],
+                'point_value': point_value,
+                'volume_min': symbol_spec['volumeMin'],
+                'volume_max': symbol_spec['volumeMax'],
+                'volume_step': symbol_spec['volumeStep']
+            }
+            lot = calculate_lot_size(account_info['balance'], RISK_PERCENT,
+                                     signal['entry'], signal['sl'], symbol_info)
         else:
             lot = symbol_spec['volumeMin']
-        
+
         order_type = 'ORDER_TYPE_BUY' if signal['action'] == 'BUY' else 'ORDER_TYPE_SELL'
         current_price = await rpc.get_current_price(signal['symbol'])
         price = current_price['ask'] if signal['action'] == 'BUY' else current_price['bid']
-        
+
         order = {
             'symbol': signal['symbol'],
             'orderType': order_type,
@@ -155,15 +155,16 @@ async def handle_signal(update, context):
             'takeProfit': signal['tp'],
             'comment': 'Telegram Signal'
         }
-        
+
         result = await rpc.create_market_order(order)
-        
+
         await update.message.reply_text(
-    f"✅ Trade placed!\n"
-    f"{signal['action']} {lot} {signal['symbol']} @ {price:.5f}\n"
-    f"SL: {signal['sl']} | TP: {signal['tp']}\n"
-    f"Risk: ${account_info['balance'] * RISK_PERCENT/100:.2f} ({RISK_PERCENT}%)")
-        
+            f"✅ Trade placed!\n"
+            f"{signal['action']} {lot} {signal['symbol']} @ {price:.5f}\n"
+            f"SL: {signal['sl']} | TP: {signal['tp']}\n"
+            f"Risk: ${account_info['balance'] * RISK_PERCENT/100:.2f} ({RISK_PERCENT}%)"
+        )
+
     except Exception as e:
         logger.error(f"Trade error: {str(e)}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
