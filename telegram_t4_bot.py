@@ -48,13 +48,17 @@ async def start(update, context):
 
 async def balance(update, context):
     try:
-        account_obj = context.bot_data['account']
-        rpc = await get_rpc_connection(account_obj)
+        account = context.bot_data['account']
+        rpc = await get_rpc_connection(account)
         info = await rpc.get_account_information()
+        # info is a dictionary – use keys
+        balance = info.get('balance', 0)
+        equity = info.get('equity', 0)
+        margin_free = info.get('margin_free', 0)
         await update.message.reply_text(
-            f"💰 Balance: ${info.balance:.2f}\n"
-            f"📊 Equity: ${info.equity:.2f}\n"
-            f"📉 Free Margin: ${info.margin_free:.2f}"
+            f"💰 Balance: ${balance:.2f}\n"
+            f"📊 Equity: ${equity:.2f}\n"
+            f"📉 Free Margin: ${margin_free:.2f}"
         )
     except Exception as e:
         await update.message.reply_text(f"Error fetching balance: {str(e)}")
