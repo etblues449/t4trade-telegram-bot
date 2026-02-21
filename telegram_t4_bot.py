@@ -26,11 +26,18 @@ async def init_metaapi(application):
     application.bot_data['account'] = account
     logger.info("MetaAPI account connected and stored.")
 # ========== HELPER: Get RPC Connection ==========
-async def get_rpc_connection(account):
-    """Obtain and connect an RPC connection for trading operations."""
-    rpc = account.get_rpc_connection()
-    await rpc.connect()
-    return rpc
+async def close_positions(rpc, symbol=None):
+    """Close all open positions, optionally filtered by symbol."""
+    positions = await rpc.get_positions()
+    closed = []
+    for pos in positions:
+        if symbol is None or pos['symbol'] == symbol:
+            try:
+                await rpc.close_position(pos['id'])
+                closed.append(f"{pos['symbol']} {pos['type']} {pos['volume']}")
+            except Exception as e:
+                logger.error(f"Failed to close position {pos['id']}: {e}")
+    return closed
 
 # ========== TELEGRAM COMMANDS ==========
 async def start(update, context):
@@ -86,27 +93,6 @@ def parse_signal(text):
     tp_match = re.search(r'TP\s*(\d+\.\d+)', text)
     tp = float(tp_match.group(1)) if tp_match else None
     
-    return {
-        'action': action,
-        'symbol': symbol,
-        'entry': entry,
-        'sl': sl,
-        'tp': tp
-    }
-
-def calculate_lot_size(balance, risk_percent, entry, sl, symbol_info):
-    if not sl or not entry:
-        return symbol_info['volume_min']
-    risk_amount = balance * (risk_percent / 100)
-    point_value = symbol_info['point_value']
-    points_at_risk = abs(entry - sl) / symbol_info['point_size']
-    raw_lot = risk_amount / (points_at_risk * point_value)
-    lot_step = symbol_info['volume_step']
-    lot = Decimal(str(raw_lot)).quantize(Decimal(str(lot_step)), rounding=ROUND_DOWN)
-    lot = max(float(lot), symbol_info['volume_min'])
-    lot = min(lot, symbol_info['volume_max'])
-    return lot
-
 async def handle_signal(update, context):
     user = update.effective_user.username
     if user not in ALLOWED_USERS and ALLOWED_USERS != ['']:
@@ -184,6 +170,30 @@ async def handle_signal(update, context):
         }
 
         result = await rpc.create_market_order(order)
+
+        await update.message.reply_text(
+            f"✅ Trade placed!\n"
+            f"{signal['action']} {lot} {signal['symbol']} @ {price:.5f}\n"
+            f"SL: {signal['sl']} | TP: {signal['tp']}\n"
+            f"Risk: ${account_info['balance'] * RISK_PERCENT/100:.2f} ({RISK_PERCENT}%)"
+        )
+
+    except Exception as e:
+        logger.error(f"Trade error: {str(e)}")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
+
+def calculate_lot_size(balance, risk_percent, entry, sl, symbol_info):
+    if not sl or not entry:
+        return symbol_info['volume_min']
+    risk_amount = balance * (risk_percent / 100)
+    point_value = symbol_info['point_value']
+    points_at_risk = abs(entry - sl) / symbol_info['point_size']
+    raw_lot = risk_amount / (points_at_risk * point_value)
+    lot_step = symbol_info['volume_step']
+    lot = Decimal(str(raw_lot)).quantize(Decimal(str(lot_step)), rounding=ROUND_DOWN)
+    lot = max(float(lot), symbol_info['volume_min'])
+    lot = min(lot, symbol_info['volume_max'])
+    return lot
 
         await update.message.reply_text(
             f"✅ Trade placed!\n"
