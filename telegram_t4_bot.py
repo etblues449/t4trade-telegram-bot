@@ -113,14 +113,37 @@ async def handle_signal(update, context):
         await update.message.reply_text("⛔ Unauthorized")
         return
 
-    text = update.message.text
+    text = update.message.text.upper()
     logger.info(f"Received: {text}")
 
-    signal = parse_signal(text)
-    if not signal:
-        await update.message.reply_text("❌ Could not parse signal. Use format:\nBUY EURUSD 1.12345 SL 1.12000 TP 1.13000")
+    # Check for close commands
+    if "CLOSE" in text:
+        # Parse symbol if present (e.g., "CLOSE EURUSD" or "CLOSE IN PROFIT")
+        symbol_match = re.search(r'\b([A-Z]{6})\b', text) or re.search(r'\b(XAU|XAG|BTC|ETH)\b', text)
+        symbol = symbol_match.group(1) if symbol_match else None
+
+        try:
+            account = context.bot_data['account']
+            rpc = await get_rpc_connection(account)
+
+            closed = await close_positions(rpc, symbol)
+            if closed:
+                msg = f"✅ Closed positions:\n" + "\n".join(closed)
+            else:
+                msg = f"No open positions" + (f" for {symbol}" if symbol else "") + "."
+            await update.message.reply_text(msg)
+        except Exception as e:
+            logger.error(f"Close error: {str(e)}")
+            await update.message.reply_text(f"❌ Error closing positions: {str(e)}")
         return
 
+    # Otherwise, treat as new trade signal (your existing parsing logic)
+    signal = parse_signal(text)
+    if not signal:
+        await update.message.reply_text("❌ Could not parse signal. Use format:\nBUY EURUSD 1.12345 SL 1.12000 TP 1.13000\nor send CLOSE [SYMBOL]")
+        return
+
+    # ===== START OF TRADE EXECUTION CODE (keep unchanged) =====
     try:
         account = context.bot_data['account']
         rpc = await get_rpc_connection(account)
