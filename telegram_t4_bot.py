@@ -18,14 +18,23 @@ RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://t4trade-tel
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ========== METAAPI SETUP ==========
+# ========== METAAPI SETUP (inside async) ==========
 async def init_metaapi(application):
+    """Initialize MetaAPI client and account, store in bot_data."""
     api_client = metaapi.MetaApi(METAAPI_TOKEN)
     account = await api_client.metatrader_account_api.get_account(ACCOUNT_ID)
     await account.wait_connected()
     application.bot_data['account'] = account
     logger.info("MetaAPI account connected and stored.")
+
 # ========== HELPER: Get RPC Connection ==========
+async def get_rpc_connection(account):
+    """Obtain and connect an RPC connection for trading operations."""
+    rpc = account.get_rpc_connection()
+    await rpc.connect()
+    return rpc
+
+# ========== HELPER: Close Positions ==========
 async def close_positions(rpc, symbol=None):
     """Close all open positions, optionally filtered by symbol."""
     positions = await rpc.get_positions()
@@ -50,7 +59,8 @@ async def start(update, context):
         f"Account: {ACCOUNT_ID}\n"
         f"Risk: {RISK_PERCENT}%\n\n"
         f"Send a signal like:\n"
-        f"BUY EURUSD 1.12345 SL 1.12000 TP 1.13000"
+        f"BUY EURUSD 1.12345 SL 1.12000 TP 1.13000\n"
+        f"Or send CLOSE [SYMBOL] to close positions"
     )
 
 async def balance(update, context):
@@ -93,6 +103,27 @@ def parse_signal(text):
     tp_match = re.search(r'TP\s*(\d+\.\d+)', text)
     tp = float(tp_match.group(1)) if tp_match else None
     
+    return {
+        'action': action,
+        'symbol': symbol,
+        'entry': entry,
+        'sl': sl,
+        'tp': tp
+    }
+
+def calculate_lot_size(balance, risk_percent, entry, sl, symbol_info):
+    if not sl or not entry:
+        return symbol_info['volume_min']
+    risk_amount = balance * (risk_percent / 100)
+    point_value = symbol_info['point_value']
+    points_at_risk = abs(entry - sl) / symbol_info['point_size']
+    raw_lot = risk_amount / (points_at_risk * point_value)
+    lot_step = symbol_info['volume_step']
+    lot = Decimal(str(raw_lot)).quantize(Decimal(str(lot_step)), rounding=ROUND_DOWN)
+    lot = max(float(lot), symbol_info['volume_min'])
+    lot = min(lot, symbol_info['volume_max'])
+    return lot
+
 async def handle_signal(update, context):
     user = update.effective_user.username
     if user not in ALLOWED_USERS and ALLOWED_USERS != ['']:
@@ -123,13 +154,12 @@ async def handle_signal(update, context):
             await update.message.reply_text(f"❌ Error closing positions: {str(e)}")
         return
 
-    # Otherwise, treat as new trade signal (your existing parsing logic)
+    # Otherwise, treat as new trade signal
     signal = parse_signal(text)
     if not signal:
-        await update.message.reply_text("❌ Could not parse signal. Use format:\nBUY EURUSD 1.12345 SL 1.12000 TP 1.13000\nor send CLOSE [SYMBOL]")
+        await update.message.reply_text("❌ Could not parse signal. Use format:\nBUY EURUSD 1.12345 SL 1.12000 TP 1.13000")
         return
 
-    # ===== START OF TRADE EXECUTION CODE (keep unchanged) =====
     try:
         account = context.bot_data['account']
         rpc = await get_rpc_connection(account)
@@ -182,39 +212,15 @@ async def handle_signal(update, context):
         logger.error(f"Trade error: {str(e)}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
-def calculate_lot_size(balance, risk_percent, entry, sl, symbol_info):
-    if not sl or not entry:
-        return symbol_info['volume_min']
-    risk_amount = balance * (risk_percent / 100)
-    point_value = symbol_info['point_value']
-    points_at_risk = abs(entry - sl) / symbol_info['point_size']
-    raw_lot = risk_amount / (points_at_risk * point_value)
-    lot_step = symbol_info['volume_step']
-    lot = Decimal(str(raw_lot)).quantize(Decimal(str(lot_step)), rounding=ROUND_DOWN)
-    lot = max(float(lot), symbol_info['volume_min'])
-    lot = min(lot, symbol_info['volume_max'])
-    return lot
-
-        await update.message.reply_text(
-            f"✅ Trade placed!\n"
-            f"{signal['action']} {lot} {signal['symbol']} @ {price:.5f}\n"
-            f"SL: {signal['sl']} | TP: {signal['tp']}\n"
-            f"Risk: ${account_info['balance'] * RISK_PERCENT/100:.2f} ({RISK_PERCENT}%)"
-        )
-
-    except Exception as e:
-        logger.error(f"Trade error: {str(e)}")
-        await update.message.reply_text(f"❌ Error: {str(e)}")
-
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).post_init(init_metaapi).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("balance", balance))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_signal))
-    
+
     webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
     logger.info(f"Starting webhook on {webhook_url}")
-    
+
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
